@@ -1,0 +1,88 @@
+name: Build Exam Kiosk
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+        python-version: ["3.9"]
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies (All Platforms)
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller
+          pip install -r requirements.txt
+
+      - name: Install Linux dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-pyqt5 python3-pyqt5.qtwebengine
+
+      - name: Build with PyInstaller (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          pyinstaller exam_kiosk.spec
+
+      - name: Build with PyInstaller (Linux/macOS)
+        if: matrix.os != 'windows-latest'
+        run: |
+          pyinstaller exam_kiosk.spec
+
+      - name: Create Windows Installer
+        if: matrix.os == 'windows-latest'
+        run: |
+          # Download Inno Setup
+          Invoke-WebRequest -Uri "https://files.jrsoftware.org/is/6/innosetup-6.2.0.exe" -OutFile "innosetup.exe"
+          # Silent install
+          Start-Process -FilePath "innosetup.exe" -ArgumentList "/VERYSILENT" -Wait
+          # Run Inno Setup Compiler
+          & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' "installer.iss"
+
+      - name: Create macOS DMG
+        if: matrix.os == 'macos-latest'
+        run: |
+          cd dist
+          hdiutil create -volname "Exam Kiosk" -srcfolder ExamKiosk.app -ov -format UDZO ExamKiosk.dmg
+
+      - name: Upload Windows artifact
+        if: matrix.os == 'windows-latest'
+        uses: actions/upload-artifact@v2
+        with:
+          name: ExamKiosk-Windows
+          path: |
+            dist/ExamKiosk.exe
+            installer/ExamKiosk_Setup.exe
+
+      - name: Upload Linux artifact
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v2
+        with:
+          name: ExamKiosk-Linux
+          path: dist/ExamKiosk
+
+      - name: Upload macOS artifact
+        if: matrix.os == 'macos-latest'
+        uses: actions/upload-artifact@v2
+        with:
+          name: ExamKiosk-macOS
+          path: |
+            dist/ExamKiosk.app
+            dist/ExamKiosk.dmg
